@@ -1,0 +1,146 @@
+name: METADAT Pipeline
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run mode (no release)'
+        required: false
+        default: 'false'
+        type: boolean
+  pull_request:
+    branches: [main]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      # === SETUP ===
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # === NOTIFY STARTED (curl) ===
+      - name: Notify started
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"embeds\":[{\"title\":\"⏩ template-source Pipeline Started\",\"description\":\"Fetching latest DATs from Dat-o-Matic...\",\"color\":16776960,\"url\":\"$GITHUB_SERVER_URL/Mesh-ARKade/metadat-template/actions/runs/$GITHUB_RUN_ID\",\"footer\":{\"text\":\"Mesh-ARKade/metadat-template\"}}]}"
+
+      # === BUILD ===
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      # NOTE: For sources using .7z archives (e.g., ProgettoSnaps), add:
+      # - name: Install 7z for archive extraction
+      #   run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
+      - name: Build TypeScript
+        run: npm run build
+
+      # === PIPELINE PHASES ===
+      - name: Phase 1 - Fetch DATs
+        env:
+          GITHUB_OWNER: Mesh-ARKade
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase fetch
+
+      - name: Phase 2 - Group DATs
+        if: env.SKIP_PIPELINE != 'true'
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase group
+
+      - name: Phase 3 - Train Dictionary
+        if: env.SKIP_PIPELINE != 'true'
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase dict || echo "Dictionary skipped"
+
+      - name: Auto-commit immutable dictionary
+        if: env.SKIP_PIPELINE != 'true'
+        run: |
+          if [[ `git status --porcelain src/data/catalog.dict` ]]; then
+            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add src/data/catalog.dict
+            git commit -m "chore: save immutable zstd dictionary [skip ci]"
+            git push
+          else
+            echo "No dictionary changes to commit."
+          fi
+
+      - name: Phase 4 - Create JSONL
+        if: env.SKIP_PIPELINE != 'true'
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase jsonl
+
+      - name: Phase 5 - Compress
+        if: env.SKIP_PIPELINE != 'true'
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase compress
+
+      - name: Phase 6 - Create Release
+        if: env.SKIP_PIPELINE != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_REPO: metadat-template
+        run: node dist/scripts/pipeline-phase.js --source template-source --phase release
+
+      # === TRIGGER METADAT-MAIN AGGREGATION ===
+      - name: Trigger metadat-main aggregation
+        if: success() && env.SKIP_PIPELINE != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/Mesh-ARKade/metadat-main/dispatches \
+            -d '{"event_type":"source-released","client_payload":{"source":"template-source","release":"template-source-'$(date +%Y-%m-%d)'"}}'
+
+      # === UPLOAD ARTIFACTS ===
+      - name: Upload artifacts
+        if: env.SKIP_PIPELINE != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: output
+          path: |
+            output/*.jsonl.zst
+            output/manifest.json
+
+      # === UPLOAD ERROR SCREENSHOT ON FAILURE ===
+      - name: Upload error screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-error
+          path: output/playwright-error.png
+          retention-days: 7
+
+      # === NOTIFY RESULT (node) ===
+      - name: Notify skipped
+        if: success() && env.SKIP_PIPELINE == 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node dist/core/notify.js skipped template-source || true
+
+      - name: Notify success (node)
+        if: success() && env.SKIP_PIPELINE != 'true'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node dist/core/notify.js success template-source || true
+
+      - name: Notify failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PIPELINE_ERROR: "Pipeline failed. Check GitHub Actions Artifacts for `playwright-error.png` screenshot."
+        run: node dist/core/notify.js failure template-source || true
