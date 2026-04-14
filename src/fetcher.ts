@@ -123,13 +123,21 @@ export class RedumpFetcher extends AbstractFetcher {
       try { parsed = xmlParser.parse(content) as Record<string, unknown>; }
       catch { console.warn(`[fetcher] XML parse error: ${path.basename(filePath)}`); return null; }
 
-      const df = parsed['datafile'] as Record<string, unknown> | undefined;
-      if (!df) return null;
+      // Redump uses <datafile> root; some BIOS DATs may use <dat>
+      const df = (parsed['datafile'] || parsed['dat']) as Record<string, unknown> | undefined;
+      if (!df) {
+        console.warn(`[fetcher] No datafile root in ${system.slug}, keys: ${Object.keys(parsed).join(', ')}`);
+        return null;
+      }
 
       const header = (df['header'] as Record<string, unknown>) || {};
       const datVersion = String(header['version'] || header['date'] || new Date().toISOString().split('T')[0]);
-      const games = df['game'];
-      if (!games) return null;
+      // Redump uses <game>; MAME-style DATs use <machine>
+      const games = df['game'] || df['machine'];
+      if (!games) {
+        console.warn(`[fetcher] No game elements in ${system.slug}, df keys: ${Object.keys(df).join(', ')}`);
+        return null;
+      }
 
       const gameArray = Array.isArray(games) ? games : [games];
       const roms: RomEntry[] = [];
