@@ -1,5 +1,5 @@
 /**
- * Core type definitions for metadat-template
+ * Core type definitions for metadat-redump
  *
  * @intent Define the foundational types used across all modules
  * @guarantee These types represent the domain model without implementation details

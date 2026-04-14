@@ -6,10 +6,50 @@
  */
 
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import zlib from 'zlib';
 import path from 'path';
 import crypto from 'crypto';
 import type { Artifact } from '../types/index.js';
+
+/**
+ * Path to immutable dictionary (trained once, committed to repo)
+ */
+const IMMUTABLE_DICT_PATH = 'src/data/catalog.dict';
+
+/**
+ * Check if immutable dictionary exists (sync version for quick checks)
+ */
+export function hasImmutableDictionary(): boolean {
+  return fsSync.existsSync(IMMUTABLE_DICT_PATH);
+}
+
+/**
+ * Get immutable dictionary if available
+ */
+export async function getImmutableDictionary(): Promise<Buffer | null> {
+  try {
+    if (fsSync.existsSync(IMMUTABLE_DICT_PATH)) {
+      console.log(`[compressor] Using immutable dictionary: ${IMMUTABLE_DICT_PATH}`);
+      return await fs.readFile(IMMUTABLE_DICT_PATH);
+    }
+  } catch (err) {
+    console.warn(`[compressor] Failed to load immutable dictionary: ${(err as Error).message}`);
+  }
+  return null;
+}
+
+/**
+ * Compress with immutable dictionary
+ */
+export async function compressWithImmutableDict(
+  content: string,
+  outputPath: string
+): Promise<Artifact> {
+  // For now, use standard compression since we don't have true dictionary training
+  // The immutable dictionary support is designed for when zstd CLI is available
+  return compress(content, outputPath);
+}
 
 /**
  * Compress content to a .zst file using Node 22's built-in zstd

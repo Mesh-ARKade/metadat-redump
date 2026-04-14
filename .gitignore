@@ -28,3 +28,9 @@ Thumbs.db
 # Temp
 *.tmp
 .tmp-groups/
+
+# Pipeline artifacts (generated at runtime)
+output/
+.pipeline-state.json
+versions.json
+src/data/catalog.dict

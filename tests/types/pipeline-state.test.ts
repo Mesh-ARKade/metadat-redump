@@ -1,5 +1,5 @@
 /**
- * Tests for pipeline state validation in metadat-template
+ * Tests for pipeline state validation in metadat-redump
  *
  * @intent Verify pipeline state Zod schemas validate correctly
  * @guarantee Invalid states are rejected, valid states pass
@@ -17,7 +17,7 @@ import {
   validatePipelineState
 } from '../../src/types/index.js';
 
-describe('Pipeline State Zod Schemas (metadat-template)', () => {
+describe('Pipeline State Zod Schemas (metadat-redump)', () => {
   describe('DATSchema', () => {
     it('should validate a valid DAT', () => {
       const valid = {

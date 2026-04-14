@@ -82,7 +82,7 @@ export async function runPipeline(options: PipelineOptions): Promise<void> {
       console.log('[pipeline] Creating GitHub release...');
       const releaser = new GitHubReleaser(
         process.env.GITHUB_OWNER || 'Mesh-ARKade',
-        process.env.GITHUB_REPO || 'metadat-template',
+        process.env.GITHUB_REPO || 'metadat-redump',
         process.env.GITHUB_TOKEN || ''
       );
       

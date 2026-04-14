@@ -1,7 +1,7 @@
 {
-  "name": "metadat-template",
+  "name": "metadat-redump",
   "version": "0.1.0",
-  "description": "Shared foundation for metadat repositories — validation, compression, release, notifications",
+  "description": "Redump DAT pipeline — fetches DATs, cue sheets, GDI files, and SBI files from old.redump.info",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,7 +17,7 @@
     "dat",
     "rom",
     "preservation",
-    "template"
+    "redump"
   ],
   "license": "MIT",
   "devDependencies": {

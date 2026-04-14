@@ -1,8 +1,8 @@
-name: METADAT Pipeline
+name: METADAT Redump Pipeline
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 10 * * *'  # TODO: confirm schedule with team
   workflow_dispatch:
     inputs:
       dry-run:
@@ -36,7 +36,7 @@ jobs:
         run: |
           curl -s -X POST "$DISCORD_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"embeds\":[{\"title\":\"⏩ template-source Pipeline Started\",\"description\":\"Fetching latest DATs from Dat-o-Matic...\",\"color\":16776960,\"url\":\"$GITHUB_SERVER_URL/Mesh-ARKade/metadat-template/actions/runs/$GITHUB_RUN_ID\",\"footer\":{\"text\":\"Mesh-ARKade/metadat-template\"}}]}"
+            -d "{\"embeds\":[{\"title\":\"⏩ metadat-redump Pipeline Started\",\"description\":\"Fetching latest DATs from old.redump.info...\",\"color\":16776960,\"url\":\"$GITHUB_SERVER_URL/Mesh-ARKade/metadat-redump/actions/runs/$GITHUB_RUN_ID\",\"footer\":{\"text\":\"Mesh-ARKade/metadat-redump\"}}]}"
 
       # === BUILD ===
       - name: Install dependencies
@@ -45,10 +45,6 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium
 
-      # NOTE: For sources using .7z archives (e.g., ProgettoSnaps), add:
-      # - name: Install 7z for archive extraction
-      #   run: sudo apt-get update && sudo apt-get install -y p7zip-full
-
       - name: Build TypeScript
         run: npm run build
 
@@ -56,15 +52,15 @@ jobs:
       - name: Phase 1 - Fetch DATs
         env:
           GITHUB_OWNER: Mesh-ARKade
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase fetch
+        run: node dist/scripts/pipeline-phase.js --source redump --phase fetch
 
       - name: Phase 2 - Group DATs
         if: env.SKIP_PIPELINE != 'true'
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase group
+        run: node dist/scripts/pipeline-phase.js --source redump --phase group
 
       - name: Phase 3 - Train Dictionary
         if: env.SKIP_PIPELINE != 'true'
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase dict || echo "Dictionary skipped"
+        run: node dist/scripts/pipeline-phase.js --source redump --phase dict || echo "Dictionary skipped"
 
       - name: Auto-commit immutable dictionary
         if: env.SKIP_PIPELINE != 'true'
@@ -81,30 +77,18 @@ jobs:
 
       - name: Phase 4 - Create JSONL
         if: env.SKIP_PIPELINE != 'true'
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase jsonl
+        run: node dist/scripts/pipeline-phase.js --source redump --phase jsonl
 
       - name: Phase 5 - Compress
         if: env.SKIP_PIPELINE != 'true'
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase compress
+        run: node dist/scripts/pipeline-phase.js --source redump --phase compress
 
       - name: Phase 6 - Create Release
         if: env.SKIP_PIPELINE != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          GITHUB_REPO: metadat-template
-        run: node dist/scripts/pipeline-phase.js --source template-source --phase release
-
-      # === TRIGGER METADAT-MAIN AGGREGATION ===
-      - name: Trigger metadat-main aggregation
-        if: success() && env.SKIP_PIPELINE != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/Mesh-ARKade/metadat-main/dispatches \
-            -d '{"event_type":"source-released","client_payload":{"source":"template-source","release":"template-source-'$(date +%Y-%m-%d)'"}}'
+          GITHUB_REPO: metadat-redump
+        run: node dist/scripts/pipeline-phase.js --source redump --phase release
 
       # === UPLOAD ARTIFACTS ===
       - name: Upload artifacts
@@ -130,17 +114,17 @@ jobs:
         if: success() && env.SKIP_PIPELINE == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: node dist/core/notify.js skipped template-source || true
+        run: node dist/core/notify.js skipped redump || true
 
-      - name: Notify success (node)
+      - name: Notify success
         if: success() && env.SKIP_PIPELINE != 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: node dist/core/notify.js success template-source || true
+        run: node dist/core/notify.js success redump || true
 
       - name: Notify failure
         if: failure()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PIPELINE_ERROR: "Pipeline failed. Check GitHub Actions Artifacts for `playwright-error.png` screenshot."
-        run: node dist/core/notify.js failure template-source || true
+        run: node dist/core/notify.js failure redump || true
