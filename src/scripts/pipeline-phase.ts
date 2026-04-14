@@ -275,12 +275,15 @@ async function runPhase(options: {
           }, {})
         ).map(([name, gameCount]) => ({ id: slugify(name), name, gameCount }));
 
+        const artifactRomCount = groupDats.reduce((s: number, d: DAT) => s + (d.roms?.length || 0), 0);
+
         const newArtifact: Artifact = {
           name: artifact.name,
           path: artifact.path,
           size: artifact.size,
           sha256: artifact.sha256,
           entryCount: artifact.entryCount,
+          romCount: artifactRomCount,
           op,
           systems: systemsInfo,
         };

@@ -48,8 +48,10 @@ export interface Artifact {
   size: number;
   /** SHA-256 hash of the artifact */
   sha256: string;
-  /** Number of games/entries in this artifact */
+  /** Number of DATs (systems) in this artifact */
   entryCount: number;
+  /** Number of ROMs across all DATs in this artifact */
+  romCount?: number;
   /** Operation type for incremental updates */
   op?: 'upsert' | 'unchanged';
   /** Optional URL if uploaded to a release */
@@ -182,6 +184,7 @@ export const ArtifactSchema = z.object({
   size: z.number().int().nonnegative(),
   sha256: z.string().length(64),
   entryCount: z.number().int().nonnegative(),
+  romCount: z.number().int().nonnegative().optional(),
   op: z.enum(['upsert', 'unchanged']).optional(),
   url: z.string().url().optional(),
   dictionary: z.string().optional(),

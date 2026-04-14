@@ -250,13 +250,14 @@ export function generateReleaseNotes(artifacts: Artifact[], date?: string): stri
     '',
     `Generated: ${date || new Date().toISOString().split('T')[0]}`,
     '',
-    '| File | Size | Entries |',
-    '|------|------|---------|'
+    '| File | Size | DATs | ROMs |',
+    '|------|------|------|------|'
   ];
 
   for (const artifact of artifacts) {
     const sizeMB = (artifact.size / (1024 * 1024)).toFixed(2);
-    lines.push(`| ${artifact.name} | ${sizeMB} MB | ${artifact.entryCount} |`);
+    const roms = artifact.romCount != null ? artifact.romCount.toLocaleString() : '—';
+    lines.push(`| ${artifact.name} | ${sizeMB} MB | ${artifact.entryCount} | ${roms} |`);
   }
 
   return lines.join('\n');
