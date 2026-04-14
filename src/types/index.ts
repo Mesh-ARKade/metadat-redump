@@ -87,6 +87,8 @@ export interface PipelineEvent {
   actionUrl?: string;
   /** Optional link to release */
   releaseUrl?: string;
+  /** Optional link to error screenshot artifact */
+  screenshotUrl?: string;
   /** Optional stats table markdown (for success notifications) */
   stats?: Array<{ metric: string; value: string }>;
 }

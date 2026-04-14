@@ -29,10 +29,22 @@ const xmlParser = new XMLParser({
   textNodeName: '#text',
 });
 
+export interface FetchResult {
+  dats: DAT[];
+  downloaded: number;
+  skipped: string[];
+  failed: Array<{ slug: string; reason: string }>;
+  parsed: number;
+}
+
 export class RedumpFetcher extends AbstractFetcher {
   private workDir: string;
   private screenshotsDir: string;
   private browser: Browser | null = null;
+  private _lastResult: FetchResult | null = null;
+
+  /** Access fetch result details (skipped/failed systems) after fetchDats() */
+  get lastResult(): FetchResult | null { return this._lastResult; }
 
   constructor(versionTracker: VersionTracker, outputDir = './output/redump', options: FetcherOptions = {}) {
     super(versionTracker, {
@@ -164,7 +176,9 @@ export class RedumpFetcher extends AbstractFetcher {
     await fs.mkdir(this.workDir, { recursive: true });
     const dats: DAT[] = [];
     const versionUpdates: Record<string, string> = {};
-    let downloaded = 0, skipped = 0;
+    let downloaded = 0;
+    const skippedSystems: string[] = [];
+    const failedSystems: Array<{ slug: string; reason: string }> = [];
 
     console.log(`[fetcher] Starting fetch for ${REDUMP_SYSTEMS.length} systems...`);
 
@@ -173,36 +187,60 @@ export class RedumpFetcher extends AbstractFetcher {
 
       const remoteLoc = await this.checkRemoteVersionForSlug(system.slug);
       const storedLoc = this.getStoredVersionForSlug(system.slug);
-      if (remoteLoc && remoteLoc === storedLoc) { skipped++; continue; }
+      if (remoteLoc && remoteLoc === storedLoc) {
+        skippedSystems.push(system.slug);
+        continue;
+      }
 
       const filePath = path.join(this.workDir, `${system.slug}.download`);
-      let page: Page | null = null;
+      let downloadOk = false;
 
-      try {
-        console.log(`[fetcher] Downloading ${system.slug}...`);
-        const url = remoteLoc || await this.checkRemoteVersionForSlug(system.slug);
-        if (!url) { console.warn(`[fetcher] No URL for ${system.slug}`); continue; }
-
-        const fullUrl = this.resolveUrl(url);
-        await this.download(fullUrl, filePath);
-        downloaded++;
-      } catch {
-        // Fallback: Playwright
+      // Try download with one retry
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let page: Page | null = null;
         try {
-          console.log(`[fetcher] Trying Playwright for ${system.slug}...`);
-          await this.ensureBrowser();
-          page = await this.browser!.newPage();
-          const dp = page.waitForEvent('download', { timeout: 30000 });
-          await page.goto(this.getDatUrl(system.slug), { timeout: 30000 }).catch(() => {});
-          const dl = await dp;
-          await dl.saveAs(filePath);
-          downloaded++;
+          if (attempt === 0) console.log(`[fetcher] Downloading ${system.slug}...`);
+          else console.log(`[fetcher] Retrying ${system.slug}...`);
+
+          const url = remoteLoc || await this.checkRemoteVersionForSlug(system.slug);
+          if (!url) { break; } // no URL available, can't retry
+
+          const fullUrl = this.resolveUrl(url);
+          await this.download(fullUrl, filePath);
+          downloadOk = true;
+          break;
         } catch {
-          console.warn(`[fetcher] Download failed: ${system.slug}, skipping`);
-          await page?.close();
-          continue;
-        } finally { await page?.close(); }
+          // Fallback: Playwright
+          try {
+            console.log(`[fetcher] Trying Playwright for ${system.slug}...`);
+            await this.ensureBrowser();
+            page = await this.browser!.newPage();
+            const dp = page.waitForEvent('download', { timeout: 30000 });
+            await page.goto(this.getDatUrl(system.slug), { timeout: 30000 }).catch(() => {});
+            const dl = await dp;
+            await dl.saveAs(filePath);
+            downloadOk = true;
+            break;
+          } catch {
+            // Capture screenshot on final attempt before closing page
+            if (attempt === 1 && page) {
+              await this.captureErrorScreenshot(page, system.slug);
+            }
+            await page?.close();
+            page = null;
+            if (attempt === 0) {
+              await new Promise(r => setTimeout(r, 3000));
+            }
+          } finally { await page?.close(); }
+        }
       }
+
+      if (!downloadOk) {
+        failedSystems.push({ slug: system.slug, reason: 'download failed after retry' });
+        console.warn(`[fetcher] Failed after retry: ${system.slug}`);
+        continue;
+      }
+      downloaded++;
 
       // BIOS datfiles return raw .dat (XML), others return .zip
       let datPath: string | null = null;
@@ -211,19 +249,31 @@ export class RedumpFetcher extends AbstractFetcher {
       if (isZip) {
         datPath = await this.extract(filePath, system.slug);
       } else {
-        // Raw DAT file — use directly
         datPath = filePath;
       }
-      if (!datPath) { await fs.unlink(filePath).catch(() => {}); continue; }
+      if (!datPath) {
+        failedSystems.push({ slug: system.slug, reason: 'extraction failed' });
+        await fs.unlink(filePath).catch(() => {});
+        continue;
+      }
 
       const dat = await this.parse(datPath, system);
-      if (dat) dats.push(dat);
+      if (dat) {
+        dats.push(dat);
+      } else {
+        failedSystems.push({ slug: system.slug, reason: 'parse failed' });
+      }
       if (remoteLoc) versionUpdates[system.slug] = remoteLoc;
       await fs.unlink(filePath).catch(() => {});
       if (datPath && datPath !== filePath) await fs.unlink(datPath).catch(() => {});
     }
 
-    console.log(`[fetcher] Fetch complete: ${downloaded} downloaded, ${skipped} skipped, ${dats.length} parsed`);
+    this._lastResult = { dats, downloaded, skipped: skippedSystems, failed: failedSystems, parsed: dats.length };
+
+    console.log(`[fetcher] Fetch complete: ${downloaded} downloaded, ${skippedSystems.length} skipped, ${dats.length} parsed, ${failedSystems.length} failed`);
+    if (failedSystems.length > 0) {
+      console.warn(`[fetcher] Failed systems: ${failedSystems.map(f => `${f.slug} (${f.reason})`).join(', ')}`);
+    }
     if (Object.keys(versionUpdates).length) await this.saveVersions(versionUpdates);
     return dats;
   }

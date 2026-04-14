@@ -102,11 +102,13 @@ jobs:
 
       # === UPLOAD ERROR SCREENSHOT ON FAILURE ===
       - name: Upload error screenshot
+        id: upload-screenshot
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-error
-          path: output/playwright-error.png
+          path: output/redump/screenshots/
+          if-no-files-found: ignore
           retention-days: 7
 
       # === NOTIFY RESULT (node) ===
@@ -126,5 +128,6 @@ jobs:
         if: failure()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PIPELINE_ERROR: "Pipeline failed. Check GitHub Actions Artifacts for `playwright-error.png` screenshot."
+          PIPELINE_ERROR: ${{ env.PIPELINE_ERROR || 'Pipeline failed — check the Action run for details.' }}
+          PIPELINE_SCREENSHOT_URL: ${{ steps.upload-screenshot.outputs.artifact-url || '' }}
         run: node dist/core/notify.js failure redump || true

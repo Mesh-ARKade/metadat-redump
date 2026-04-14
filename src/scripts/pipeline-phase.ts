@@ -102,12 +102,21 @@ async function runPhase(options: {
       const fetcher = new RedumpFetcher(versionTracker, outputDir);
 
       try {
-        // Check if ALL systems are unchanged (overall skip check)
         const dats = await fetcher.fetchDats();
+        const result = fetcher.lastResult;
         console.log(`[phase:fetch] Fetched ${dats.length} DATs`);
 
+        // Export fetch details to GITHUB_ENV for notifications
+        if (process.env.GITHUB_ENV && result) {
+          const details: string[] = [];
+          if (result.skipped.length > 0) details.push(`Skipped (unchanged): ${result.skipped.length}`);
+          if (result.failed.length > 0) details.push(`Failed: ${result.failed.map(f => `${f.slug} (${f.reason})`).join(', ')}`);
+          if (details.length > 0) {
+            await fs.appendFile(process.env.GITHUB_ENV, `PIPELINE_FETCH_DETAILS=${details.join(' | ')}\n`);
+          }
+        }
+
         if (dats.length === 0) {
-          // Could be all unchanged - check versions.json for any entries
           const storedInfo = versionTracker.read('redump');
           if (storedInfo && Object.keys(storedInfo as unknown as Record<string, unknown>).some(k => k !== 'version' && k !== 'lastChecked')){
             console.log('[phase:fetch] All systems unchanged, skipping pipeline...');
@@ -123,7 +132,11 @@ async function runPhase(options: {
         state.dats = dats;
         await saveState(state, 'fetch');
       } catch (err) {
-        console.error(`[phase:fetch] Error: ${(err as Error).message}`);
+        const msg = (err as Error).message;
+        console.error(`[phase:fetch] Error: ${msg}`);
+        if (process.env.GITHUB_ENV) {
+          await fs.appendFile(process.env.GITHUB_ENV, `PIPELINE_ERROR=${msg}\n`);
+        }
         throw err;
       } finally {
         await fetcher.close();
@@ -377,6 +390,8 @@ async function runPhase(options: {
 
         const formatSize = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 
+        const fetchDetails = process.env.PIPELINE_FETCH_DETAILS || '';
+
         const stats = [
           { metric: 'Systems', value: (state.datCount || 0).toLocaleString() },
           { metric: 'ROMs', value: (state.romCount || 0).toLocaleString() },
@@ -385,6 +400,7 @@ async function runPhase(options: {
           { metric: 'Upload', value: formatSize(uploadSize) },
           { metric: 'Saved', value: formatSize(savedSize) },
           { metric: 'Total Size', value: formatSize(totalSize) },
+          ...(fetchDetails ? [{ metric: 'Fetch', value: fetchDetails }] : []),
         ];
 
         const envContent = [

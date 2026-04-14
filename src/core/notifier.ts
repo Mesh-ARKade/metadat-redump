@@ -134,6 +134,9 @@ export class DiscordNotifier {
     if (event.releaseUrl) {
       links.push(`[Release](${event.releaseUrl})`);
     }
+    if (event.screenshotUrl) {
+      links.push(`[Screenshot](${event.screenshotUrl})`);
+    }
     if (links.length > 0) {
       fields.push({ name: '🔗 Links', value: links.join(' · '), inline: false });
     }

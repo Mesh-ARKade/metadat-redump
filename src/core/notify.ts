@@ -47,6 +47,7 @@ const event: PipelineEvent = {
 
   // For failure
   error: process.env.PIPELINE_ERROR || undefined,
+  screenshotUrl: process.env.PIPELINE_SCREENSHOT_URL || undefined,
 
   // For skipped
   skipReason: process.env.PIPELINE_SKIP_REASON || undefined,
