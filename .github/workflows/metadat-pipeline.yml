@@ -2,7 +2,7 @@ name: METADAT Redump Pipeline
 
 on:
   schedule:
-    - cron: '0 10 * * *'  # TODO: confirm schedule with team
+    - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
